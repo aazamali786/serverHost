@@ -39,7 +39,7 @@ app.use(express.json());
 // CORS
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin: "https://check-host-zeta.vercel.app",
     credentials: true,
   })
 );
