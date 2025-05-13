@@ -6,7 +6,7 @@ const cloudinary = require("cloudinary").v2;
 // Register/SignUp user
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, phone, address } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({
@@ -19,6 +19,15 @@ exports.register = async (req, res) => {
       return res.status(400).json({
         message: "Invalid role provided",
       });
+    }
+
+    // Check for required fields for property owners
+    if (role === "owner") {
+      if (!phone || !address) {
+        return res.status(400).json({
+          message: "Phone number and address are required for property owners",
+        });
+      }
     }
 
     // check if user is already registered
@@ -35,6 +44,8 @@ exports.register = async (req, res) => {
       email,
       password,
       role: role || "user", // Default to "user" if role not provided
+      phone: role === "owner" ? phone : undefined,
+      address: role === "owner" ? address : undefined,
     });
 
     // after creating new user in DB send the token
@@ -89,18 +100,22 @@ exports.login = async (req, res) => {
 // Google Login
 exports.googleLogin = async (req, res) => {
   try {
-    const { name, email } = req.body;
+    const { name, email, role, phone, address } = req.body;
 
     if (!name || !email) {
-      return (
-        res.status(400),
-        json({
-          message: "Name and email are required",
-        })
-      );
+      return res.status(400).json({
+        message: "Name and email are required",
+      });
     }
 
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    // Check for required fields for property owners
+    if (role === "owner") {
+      if (!phone || !address) {
+        return res.status(400).json({
+          message: "Phone number and address are required for property owners",
+        });
+      }
+    }
 
     // check if user already registered
     let user = await User.findOne({ email });
@@ -111,6 +126,9 @@ exports.googleLogin = async (req, res) => {
         name,
         email,
         password: await bcrypt.hash(Math.random().toString(36).slice(-8), 10),
+        role: role || "user",
+        phone: role === "owner" ? phone : undefined,
+        address: role === "owner" ? address : undefined,
       });
     }
 
@@ -143,34 +161,39 @@ exports.uploadPicture = async (req, res) => {
 // update user
 exports.updateUserDetails = async (req, res) => {
   try {
-    const { name, password, email, picture } = req.body;
+    const { name, password, email, picture, phone, address } = req.body;
 
     const user = await User.findOne({ email });
 
     if (!user) {
-      return (
-        res.status(404),
-        json({
-          message: "User not found",
-        })
-      );
+      return res.status(404).json({
+        message: "User not found",
+      });
     }
 
-    // user can update only name, only password,only profile pic or all three
-
+    // Update basic info
     user.name = name;
+
+    // Update phone and address for property owners
+    if (user.role === "owner") {
+      if (phone) user.phone = phone;
+      if (address) user.address = address;
+    }
+
+    // Update password and/or picture
     if (picture && !password) {
       user.picture = picture;
     } else if (password && !picture) {
       user.password = password;
-    } else {
+    } else if (picture && password) {
       user.picture = picture;
       user.password = password;
     }
+
     const updatedUser = await user.save();
     cookieToken(updatedUser, res);
   } catch (error) {
-    res.status(500).json({ message: "Internal server error" }, error);
+    res.status(500).json({ message: "Internal server error", error });
   }
 };
 
@@ -186,4 +209,125 @@ exports.logout = async (req, res) => {
     success: true,
     message: "Logged out",
   });
+};
+
+// Get all property owners
+exports.getAllOwners = async (req, res) => {
+  try {
+    const owners = await User.find({ role: "owner" }).select("-password");
+    res.status(200).json({
+      success: true,
+      owners,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching property owners",
+      error: error.message,
+    });
+  }
+};
+
+// Verify property owner
+exports.verifyOwner = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Owner ID is required",
+      });
+    }
+
+    const owner = await User.findById(id);
+
+    if (!owner) {
+      return res.status(404).json({
+        success: false,
+        message: "Property owner not found",
+      });
+    }
+
+    if (owner.role !== "owner") {
+      return res.status(400).json({
+        success: false,
+        message: "User is not a property owner",
+      });
+    }
+
+    try {
+      // Update verification status
+      owner.isVerified = true;
+
+      // Save the owner
+      await owner.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Property owner verified successfully",
+        owner,
+      });
+    } catch (saveError) {
+      console.error("Error saving owner verification:", saveError);
+      return res.status(500).json({
+        success: false,
+        message: "Error saving owner verification",
+        error: saveError.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error verifying owner:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error verifying property owner",
+      error: error.message,
+    });
+  }
+};
+
+// Unverify property owner
+exports.unverifyOwner = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Owner ID is required",
+      });
+    }
+
+    const owner = await User.findById(id);
+
+    if (!owner) {
+      return res.status(404).json({
+        success: false,
+        message: "Property owner not found",
+      });
+    }
+
+    if (owner.role !== "owner") {
+      return res.status(400).json({
+        success: false,
+        message: "User is not a property owner",
+      });
+    }
+
+    owner.isVerified = false;
+    await owner.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Property owner unverified successfully",
+      owner,
+    });
+  } catch (error) {
+    console.error("Error unverifying owner:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error unverifying property owner",
+      error: error.message,
+    });
+  }
 };

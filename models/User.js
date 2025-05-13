@@ -13,6 +13,10 @@ const userSchema = new mongoose.Schema({
     default: "user",
     required: true,
   },
+  isVerified: {
+    type: Boolean,
+    default: false,
+  },
   email: {
     type: String,
     unique: true,
@@ -21,6 +25,18 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: true,
+  },
+  phone: {
+    type: String,
+    required: function () {
+      return this.role === "owner";
+    },
+  },
+  address: {
+    type: String,
+    required: function () {
+      return this.role === "owner";
+    },
   },
   picture: {
     type: String,
@@ -32,7 +48,11 @@ const userSchema = new mongoose.Schema({
 
 // encrypt password before saving it into the DB
 userSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) {
+    return next();
+  }
   this.password = await bcrypt.hash(this.password, 10);
+  next();
 });
 
 // create and return jwt token
