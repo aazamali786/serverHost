@@ -250,7 +250,7 @@ exports.activatePlace = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Place activated successfully",
+      message: "Property KYC approved successfully",
     });
   } catch (err) {
     res.status(500).json({
